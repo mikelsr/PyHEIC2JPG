@@ -26,12 +26,11 @@ def convert_single_file(heic_path, jpg_path, output_quality, dry) -> tuple:
                 # Automatically handle and preserve EXIF metadata
                 exif_data = image.info.get("exif")
                 icc_profile_data = image.info.get("icc_profile")
+                srgb_profile = ImageCms.createProfile("sRGB")
 
                 if icc_profile_data:
                     # Load the source ICC profile
                     input_profile = ImageCms.ImageCmsProfile(io.BytesIO(icc_profile_data))
-                    # Load the sRGB profile
-                    srgb_profile = ImageCms.createProfile("sRGB")
                     # Convert image to sRGB
                     image = ImageCms.profileToProfile(
                         image,
@@ -45,7 +44,7 @@ def convert_single_file(heic_path, jpg_path, output_quality, dry) -> tuple:
                     "JPEG",
                     quality=output_quality,
                     exif=exif_data,
-                    icc_profile=ImageCms.ImageCmsProfile(ImageCms.createProfile("sRGB")).tobytes(),
+                    icc_profile=ImageCms.ImageCmsProfile(srgb_profile).tobytes(),
                     keep_rgb=True,
                     optimize=True,
                     subsampling=0,
@@ -55,11 +54,11 @@ def convert_single_file(heic_path, jpg_path, output_quality, dry) -> tuple:
                 os.utime(jpg_path, (heic_stat.st_atime, heic_stat.st_mtime))
         return heic_path, True  # Successful conversion
     except (UnidentifiedImageError, FileNotFoundError, OSError) as e:
-        logging.error("Error converting '%s': %s", heic_path, e)
+        logging.error(f"Error converting '{heic_path}': {e}")
         return heic_path, False  # Failed conversion
 
 
-def convert_heic_to_jpg(executor, heic_dir, output_quality, dry) -> None:
+def convert_heic_to_jpg_async(executor, futures, heic_dir, output_quality, dry) -> (int, int):
     """
     Converts HEIC images in a directory to JPG format using parallel processing.
 
@@ -69,21 +68,25 @@ def convert_heic_to_jpg(executor, heic_dir, output_quality, dry) -> None:
         - max_workers (int, optional): Number of parallel threads. Defaults to 4.
     """
 
+    submits = 0
+    skips = 0
     if not os.path.isdir(heic_dir):
-        logging.error("Directory '%s' does not exist.", heic_dir)
-        return
+        logging.error(f"Directory '{heic_dir}' does not exist.")
+        return submits, skips
 
     sub_dirs = [dir for dir in os.listdir(heic_dir) if os.path.isdir(os.path.join(heic_dir, dir))]
     for sub_dir in sub_dirs:
-        convert_heic_to_jpg(executor, os.path.join(heic_dir, sub_dir), output_quality, dry)
+        sub_submits, sub_skips = convert_heic_to_jpg_async(
+            executor, futures, os.path.join(heic_dir, sub_dir), output_quality, dry)
+        submits += sub_submits
+        skips += sub_skips
 
     # Get all HEIC files in the specified directory
     heic_files = [file for file in os.listdir(heic_dir) if file.lower().endswith(".heic")]
     total_files = len(heic_files)
 
     if total_files == 0:
-        logging.info(f"No HEIC files found in the directory {heic_dir}.")
-        return
+        return submits, skips
 
     # Prepare file paths for conversion
     tasks = []
@@ -93,36 +96,40 @@ def convert_heic_to_jpg(executor, heic_dir, output_quality, dry) -> None:
 
         # Skip conversion if the JPG already exists
         if os.path.exists(jpg_path):
-            logging.info("Skipping '%s' as the JPG already exists.", file_name)
+            skips += 1
+            logging.info(f"Skipping '{heic_path}' as the JPG already exists.")
             continue
 
-        tasks.append((heic_path, jpg_path))
+        # Convert HEIC files to JPG in parallel using ThreadPoolExecutor
+        task = executor.submit(convert_single_file, heic_path, jpg_path, output_quality, dry)
+        futures[task] = heic_path
+        submits += 1
 
-    # Convert HEIC files to JPG in parallel using ThreadPoolExecutor
-    num_converted = 0
-    future_to_file = {
-        executor.submit(convert_single_file, heic_path, jpg_path, output_quality, dry): heic_path
-        for heic_path, jpg_path in tasks
-    }
+    return submits, skips
 
-    for future in as_completed(future_to_file):
-        heic_file = future_to_file[future]
+
+def convert_heic_to_jpg(executor, heic_dir, output_quality, dry) -> None:
+    futures = {}
+    submits, skips = convert_heic_to_jpg_async(executor, futures, heic_dir, output_quality, dry)
+
+    converts = 0
+    errors = 0
+    for future in as_completed(futures):
+        heic_file = futures[future]
         try:
             _, success = future.result()
             if success:
-                num_converted += 1
-            # Display progress
-            progress = int((num_converted / total_files) * 100)
-            print(f"Conversion progress: {progress}%", end="\r", flush=True)
+                converts += 1
         except Exception as e:
-            logging.error("Error occurred during conversion of '%s': %s", heic_file, e)
+            errors += 1
+            logging.error(f"Error occurred during conversion of '{heic_file}': {e}")
 
-    print(f"\nConversion completed successfully. {num_converted} files converted.")
+    logging.info(f"Conversion completed. {submits} files, {converts} OK, {skips} SKIP, {errors} ERR.")
 
 
 if __name__ == "__main__":
 
-    logging.basicConfig(level=logging.INFO, format='%(message)s')
+    logging.basicConfig(level=logging.INFO, format="%(asctime)s\t| %(levelname)s\t| %(message)s")
 
     # Parse command line arguments
     parser = argparse.ArgumentParser(description="Converts HEIC images to JPG format.",
