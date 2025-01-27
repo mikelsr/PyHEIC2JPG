@@ -105,7 +105,7 @@ def convert_heic_to_jpg_async(executor, futures, heic_dir, output_quality, dry) 
             logging.info(f"Skipping '{heic_path}' as the JPG already exists.")
             continue
         else:
-            logging.info(f"Adding '{heic_path}' to the conversion queue format.")
+            logging.info(f"Adding '{heic_path}' to the conversion queue.")
 
         # Convert HEIC files to JPG in parallel using ThreadPoolExecutor
         task = executor.submit(convert_single_file, heic_path, jpg_path, output_quality, dry)
