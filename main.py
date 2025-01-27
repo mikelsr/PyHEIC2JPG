@@ -7,14 +7,14 @@ from PIL import Image, ImageCms, UnidentifiedImageError
 from pillow_heif import register_heif_opener
 
 
-def convert_single_file(heic_path, webp_path, output_quality, dry) -> tuple:
+def convert_single_file(heic_path, jpg_path, output_quality, dry) -> tuple:
     """
-    Convert a single HEIC file to WEBP format.
+    Convert a single HEIC file to JPG format.
     
     #### Args:
         - heic_path (str): Path to the HEIC file.
-        - webp_path (str): Path to save the converted WEBP file.
-        - output_quality (int): Quality of the output WEBP image.
+        - jpg_path (str): Path to save the converted JPG file.
+        - output_quality (int): Quality of the output JPG image.
 
     #### Returns:
         - tuple: Path to the HEIC file and conversion status.
@@ -41,7 +41,7 @@ def convert_single_file(heic_path, webp_path, output_quality, dry) -> tuple:
                     )
                 image = image.convert("RGB")
                 image.save(
-                    webp_path,
+                    jpg_path,
                     "JPEG",
                     quality=output_quality,
                     exif=exif_data,
@@ -52,20 +52,20 @@ def convert_single_file(heic_path, webp_path, output_quality, dry) -> tuple:
                 )
                 # Preserve the original access and modification timestamps
                 heic_stat = os.stat(heic_path)
-                os.utime(webp_path, (heic_stat.st_atime, heic_stat.st_mtime))
+                os.utime(jpg_path, (heic_stat.st_atime, heic_stat.st_mtime))
         return heic_path, True  # Successful conversion
     except (UnidentifiedImageError, FileNotFoundError, OSError) as e:
         logging.error("Error converting '%s': %s", heic_path, e)
         return heic_path, False  # Failed conversion
 
 
-def convert_heic_to_webp(executor, heic_dir, output_quality, dry) -> None:
+def convert_heic_to_jpg(executor, heic_dir, output_quality, dry) -> None:
     """
-    Converts HEIC images in a directory to WEBP format using parallel processing.
+    Converts HEIC images in a directory to JPG format using parallel processing.
 
     #### Args:
         - heic_dir (str): Path to the directory containing HEIC files.
-        - output_quality (int, optional): Quality of the output WEBP images (1-100). Defaults to 50.
+        - output_quality (int, optional): Quality of the output JPG images (1-100). Defaults to 50.
         - max_workers (int, optional): Number of parallel threads. Defaults to 4.
     """
 
@@ -75,7 +75,7 @@ def convert_heic_to_webp(executor, heic_dir, output_quality, dry) -> None:
 
     sub_dirs = [dir for dir in os.listdir(heic_dir) if os.path.isdir(os.path.join(heic_dir, dir))]
     for sub_dir in sub_dirs:
-        convert_heic_to_webp(executor, os.path.join(heic_dir, sub_dir), output_quality, dry)
+        convert_heic_to_jpg(executor, os.path.join(heic_dir, sub_dir), output_quality, dry)
 
     # Get all HEIC files in the specified directory
     heic_files = [file for file in os.listdir(heic_dir) if file.lower().endswith(".heic")]
@@ -89,20 +89,20 @@ def convert_heic_to_webp(executor, heic_dir, output_quality, dry) -> None:
     tasks = []
     for file_name in heic_files:
         heic_path = os.path.join(heic_dir, file_name)
-        webp_path = os.path.join(heic_dir, os.path.splitext(file_name)[0] + ".webp")
+        jpg_path = os.path.join(heic_dir, os.path.splitext(file_name)[0] + ".jpg")
 
-        # Skip conversion if the WEBP already exists
-        if os.path.exists(webp_path):
-            logging.info("Skipping '%s' as the WEBP already exists.", file_name)
+        # Skip conversion if the JPG already exists
+        if os.path.exists(jpg_path):
+            logging.info("Skipping '%s' as the JPG already exists.", file_name)
             continue
 
-        tasks.append((heic_path, webp_path))
+        tasks.append((heic_path, jpg_path))
 
-    # Convert HEIC files to WEBP in parallel using ThreadPoolExecutor
+    # Convert HEIC files to JPG in parallel using ThreadPoolExecutor
     num_converted = 0
     future_to_file = {
-        executor.submit(convert_single_file, heic_path, webp_path, output_quality, dry): heic_path
-        for heic_path, webp_path in tasks
+        executor.submit(convert_single_file, heic_path, jpg_path, output_quality, dry): heic_path
+        for heic_path, jpg_path in tasks
     }
 
     for future in as_completed(future_to_file):
@@ -125,12 +125,12 @@ if __name__ == "__main__":
     logging.basicConfig(level=logging.INFO, format='%(message)s')
 
     # Parse command line arguments
-    parser = argparse.ArgumentParser(description="Converts HEIC images to WEBP format.",
+    parser = argparse.ArgumentParser(description="Converts HEIC images to JPG format.",
                                      usage="%(prog)s [options] <heic_directory>",
                                      formatter_class=argparse.RawDescriptionHelpFormatter)
 
     parser.add_argument("heic_dir", type=str, help="Path to the directory containing HEIC images.")
-    parser.add_argument("-q", "--quality", type=int, default=90, help="Output WEBP image quality (1-100). Default is 50.")
+    parser.add_argument("-q", "--quality", type=int, default=90, help="Output JPG image quality (1-100). Default is 50.")
     parser.add_argument("-w", "--workers", type=int, default=4, help="Number of parallel workers for conversion.")
     parser.add_argument("-d", "--dry", type=bool, default=False, help="Dry run mode. Do not execute conversion.")
 
@@ -148,5 +148,5 @@ if __name__ == "__main__":
 
     register_heif_opener()
     with ThreadPoolExecutor(max_workers=args.workers) as executor:
-        # Convert HEIC to WEBP with parallel processing
-        convert_heic_to_webp(executor, args.heic_dir, args.quality, args.dry)
+        # Convert HEIC to JPG with parallel processing
+        convert_heic_to_jpg(executor, args.heic_dir, args.quality, args.dry)
