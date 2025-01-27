@@ -109,7 +109,7 @@ def convert_heic_to_jpg_async(executor, futures, heic_dir, output_quality, dry) 
     return submits, skips
 
 
-def convert_heic_to_jpg(executor, heic_dir, output_quality, dry) -> None:
+def convert_heic_to_jpg(executor, heic_dir, output_quality, dry, remove_originals) -> None:
     futures = {}
     submits, skips = convert_heic_to_jpg_async(executor, futures, heic_dir, output_quality, dry)
 
@@ -121,6 +121,9 @@ def convert_heic_to_jpg(executor, heic_dir, output_quality, dry) -> None:
             _, success = future.result()
             if success:
                 converts += 1
+                if not dry and remove_originals:
+                    logging.info(f"Deleting {heic_file}")
+                    os.remove(heic_file)
         except Exception as e:
             errors += 1
             logging.error(f"Error occurred during conversion of '{heic_file}': {e}")
@@ -141,6 +144,8 @@ if __name__ == "__main__":
     parser.add_argument("-q", "--quality", type=int, default=90, help="Output JPG image quality (1-100). Default is 50.")
     parser.add_argument("-w", "--workers", type=int, default=4, help="Number of parallel workers for conversion.")
     parser.add_argument("-d", "--dry", type=bool, default=False, help="Dry run mode. Do not execute conversion.")
+    parser.add_argument("-ro", "--remove-originals", type=bool, default=False,
+                        help="Remove the original HEIC files after conversion. Always False if in dry run.")
 
     parser.epilog = """
     Example usage:
@@ -157,4 +162,4 @@ if __name__ == "__main__":
     register_heif_opener()
     with ThreadPoolExecutor(max_workers=args.workers) as executor:
         # Convert HEIC to JPG with parallel processing
-        convert_heic_to_jpg(executor, args.heic_dir, args.quality, args.dry)
+        convert_heic_to_jpg(executor, args.heic_dir, args.quality, args.dry, args.remove_originals)
