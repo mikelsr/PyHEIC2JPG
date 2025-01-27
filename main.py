@@ -45,7 +45,7 @@ def convert_single_file(heic_path, webp_path, output_quality, dry) -> tuple:
                     "JPEG",
                     quality=output_quality,
                     exif=exif_data,
-                    icc_profile=icc_profile_data,
+                    icc_profile=ImageCms.ImageCmsProfile(ImageCms.createProfile("sRGB")).tobytes(),
                     keep_rgb=True,
                     optimize=True,
                     subsampling=0,
