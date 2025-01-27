@@ -1,7 +1,8 @@
-import io
-import os
-import logging
 import argparse
+import io
+import logging
+import os
+import shutil
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from PIL import Image, ImageCms, UnidentifiedImageError
 from pillow_heif import register_heif_opener
@@ -83,7 +84,10 @@ def convert_heic_to_jpg_async(executor, futures, heic_dir, output_quality, dry) 
         skips += sub_skips
 
     # Get all HEIC files in the specified directory
-    heic_files = [file for file in os.listdir(heic_dir) if file.lower().endswith(".heic")]
+    heic_files = [
+        file for file in os.listdir(heic_dir)
+        if file.lower().endswith(".heic") and not os.path.isdir(os.path.join(heic_dir, file))
+    ]
     total_files = len(heic_files)
 
     if total_files == 0:
@@ -100,6 +104,8 @@ def convert_heic_to_jpg_async(executor, futures, heic_dir, output_quality, dry) 
             skips += 1
             logging.info(f"Skipping '{heic_path}' as the JPG already exists.")
             continue
+        else:
+            logging.info(f"Adding '{heic_path}' to the conversion queue format.")
 
         # Convert HEIC files to JPG in parallel using ThreadPoolExecutor
         task = executor.submit(convert_single_file, heic_path, jpg_path, output_quality, dry)
@@ -124,6 +130,14 @@ def convert_heic_to_jpg(executor, heic_dir, output_quality, dry, remove_original
                 if not dry and remove_originals:
                     logging.info(f"Deleting {heic_file}")
                     os.remove(heic_file)
+                    # For Synology, remove its metadata directory too.
+                    heic_path_components = os.path.split(heic_file)
+                    logging.info(f"heic_path: '{heic_file}' | split: {heic_path_components}")
+                    heic_metadata_dir = os.path.join(*heic_path_components[:-1])
+                    file_name = heic_path_components[-1]
+                    heic_metadata_dir = os.path.join(heic_metadata_dir, "@eaDir", file_name)
+                    if os.path.exists(heic_metadata_dir):
+                        shutil.rmtree(heic_metadata_dir)
         except Exception as e:
             errors += 1
             logging.error(f"Error occurred during conversion of '{heic_file}': {e}")

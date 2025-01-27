@@ -7,8 +7,9 @@ Fork of [dragonGR/PyHEIC2JPG](https://github.com/dragonGR/PyHEIC2JPG). I've made
 3. *Color profiles*: Extract the color profile from HEIC images and convert them to their sRGB equivalent for the JPGs.
 Before this the colors in the JPG did not match the HEIC.
 4. *New options*: Add the `--dry` and `--remove-originals` options to perform dry runs and remove the original images after conversion, respectively.
-5. *Change defaults*: for quality and the new options.
-6. *Logging*: Change the logging format.
+5. *Synology*: Remove the metadata directory for each file in Synology NASes if `--remove-originals` is true.
+6. *Change defaults*: for quality and the new options.
+7. *Logging*: Change the logging format.
 
 ---
 
