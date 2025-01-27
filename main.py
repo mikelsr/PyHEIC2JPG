@@ -38,6 +38,7 @@ def convert_single_file(heic_path, jpg_path, output_quality, dry) -> tuple:
                         srgb_profile,
                         renderingIntent=ImageCms.Intent.PERCEPTUAL,
                     )
+
                 image = image.convert("RGB")
                 image.save(
                     jpg_path,
@@ -45,9 +46,9 @@ def convert_single_file(heic_path, jpg_path, output_quality, dry) -> tuple:
                     quality=output_quality,
                     exif=exif_data,
                     icc_profile=ImageCms.ImageCmsProfile(srgb_profile).tobytes(),
-                    keep_rgb=True,
+                    # keep_rgb=True,
                     optimize=True,
-                    subsampling=0,
+                    subsampling=1,
                 )
                 # Preserve the original access and modification timestamps
                 heic_stat = os.stat(heic_path)
@@ -124,7 +125,7 @@ def convert_heic_to_jpg(executor, heic_dir, output_quality, dry) -> None:
             errors += 1
             logging.error(f"Error occurred during conversion of '{heic_file}': {e}")
 
-    logging.info(f"Conversion completed. {submits} files, {converts} OK, {skips} SKIP, {errors} ERR.")
+    logging.info(f"Conversion completed. {submits + skips} files, {converts} OK, {skips} SKIP, {errors} ERR.")
 
 
 if __name__ == "__main__":
