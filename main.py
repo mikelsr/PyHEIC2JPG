@@ -8,6 +8,10 @@ from PIL import Image, ImageCms, UnidentifiedImageError
 from pillow_heif import register_heif_opener
 
 
+# Default metadata directory on Synology systems.
+METADATA_DIR = "@eaDir"
+
+
 def convert_single_file(heic_path, jpg_path, output_quality, dry) -> tuple:
     """
     Convert a single HEIC file to JPG format.
@@ -115,34 +119,52 @@ def convert_heic_to_jpg_async(executor, futures, heic_dir, output_quality, dry) 
     return submits, skips
 
 
-def convert_heic_to_jpg(executor, heic_dir, output_quality, dry, remove_originals) -> None:
-    futures = {}
-    submits, skips = convert_heic_to_jpg_async(executor, futures, heic_dir, output_quality, dry)
+def delete_heic(heic_file):
+    logging.info(f"Deleting {heic_file}")
+    os.remove(heic_file)
+    # For Synology, remove its metadata directory too.
+    heic_path_components = os.path.split(heic_file)
+    heic_metadata_dir = os.path.join(*heic_path_components[:-1])
+    file_name = heic_path_components[-1]
+    heic_metadata_dir = os.path.join(heic_metadata_dir, METADATA_DIR, file_name)
+    if os.path.exists(heic_metadata_dir):
+        shutil.rmtree(heic_metadata_dir)
 
+
+def convert_heic_to_jpg(executor, heic_dir, output_quality, dry, remove_originals) -> None:
+    convert_futures = {}
+    submits, skips = convert_heic_to_jpg_async(executor, convert_futures, heic_dir, output_quality, dry)
+
+    delete_futures = []
     converts = 0
     errors = 0
-    for future in as_completed(futures):
-        heic_file = futures[future]
+    deletes = 0
+    for future in as_completed(convert_futures):
+        heic_file = convert_futures[future]
         try:
             _, success = future.result()
             if success:
                 converts += 1
                 if not dry and remove_originals:
-                    logging.info(f"Deleting {heic_file}")
-                    os.remove(heic_file)
-                    # For Synology, remove its metadata directory too.
-                    heic_path_components = os.path.split(heic_file)
-                    logging.info(f"heic_path: '{heic_file}' | split: {heic_path_components}")
-                    heic_metadata_dir = os.path.join(*heic_path_components[:-1])
-                    file_name = heic_path_components[-1]
-                    heic_metadata_dir = os.path.join(heic_metadata_dir, "@eaDir", file_name)
-                    if os.path.exists(heic_metadata_dir):
-                        shutil.rmtree(heic_metadata_dir)
+                    logging.info(f"Adding '{heic_file}' to the deletion queue.")
+                    delete_futures.append(
+                        executor.submit(delete_heic, heic_file)
+                    )
+
         except Exception as e:
             errors += 1
             logging.error(f"Error occurred during conversion of '{heic_file}': {e}")
 
-    logging.info(f"Conversion completed. {submits + skips} files, {converts} OK, {skips} SKIP, {errors} ERR.")
+    if not dry and remove_originals:
+        for future in as_completed(delete_futures):
+            result = future.result()
+            if result is not None:
+                _, success = result
+                if success:
+                    deletes += 1
+
+    logging.info(f"Conversion completed. {submits + skips} converted files,"
+                 f"{converts} OK, {skips} SKIP, {errors} ERR, {deletes} deleted.")
 
 
 if __name__ == "__main__":
